@@ -39,7 +39,8 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
   late int _finalPosition;
   int _completedClues = 0;
   bool _isLoading = true; // NEW: Start with loading state
-  bool _podiumFetchCompleted = false; // Guards _isLoading until podium DB query finishes
+  bool _podiumFetchCompleted =
+      false; // Guards _isLoading until podium DB query finishes
   Map<String, int> _prizes = {};
 
   // Podium Winners Data (from game_players.final_placement)
@@ -62,8 +63,9 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
     _fireworkCenterController =
         ConfettiController(duration: const Duration(seconds: 2));
 
-    // Start loading always to ensure sync
-    _isLoading = true;
+    // Start with results from previous screen if available
+    _isLoading = (widget.playerPosition <= 0);
+    _podiumFetchCompleted = false;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final gameProvider = Provider.of<GameProvider>(context, listen: false);
@@ -85,7 +87,8 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
 
       // FORCE SYNC: Ensure provider knows the event ID
       if (gameProvider.currentEventId != widget.eventId) {
-        debugPrint("🏆 WinnerScreen: EventID Mismatch (Provider: ${gameProvider.currentEventId} vs Widget: ${widget.eventId}). Fixing...");
+        debugPrint(
+            "🏆 WinnerScreen: EventID Mismatch (Provider: ${gameProvider.currentEventId} vs Widget: ${widget.eventId}). Fixing...");
         // Re-initialize provider context for this event without heavy loading UI
         await gameProvider.fetchClues(eventId: widget.eventId, silent: true);
       }
@@ -96,10 +99,25 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
       // Try immediate check
       _updatePositionFromLeaderboard();
 
-      // Safety timeout: If after 30 seconds we still loading, force show content
+      // Safety timeout: If after 15 seconds we still haven't found a position,
+      // and we are NOT in the top 3 (already handled by _updatePosition),
+      // we check if we should show the "No participaste" or continue waiting.
+      Future.delayed(const Duration(seconds: 15), () {
+        if (mounted && _isLoading) {
+          debugPrint(
+              "⚠️ Podium safety check (15s): Position still 0. Checking if spectator...");
+          // If we are a spectator, we can release loading.
+          // If we are a player but still not found, we might wait up to 30s.
+          if (playerProvider.currentPlayer?.role == 'spectator') {
+            setState(() => _isLoading = false);
+          }
+        }
+      });
+
       Future.delayed(const Duration(seconds: 30), () {
         if (mounted && _isLoading) {
-          debugPrint("⚠️ Podium timeout: Forcing display with available data.");
+          debugPrint(
+              "⚠️ Podium final timeout (30s): Forcing display with available data.");
           setState(() {
             _isLoading = false;
           });
@@ -125,6 +143,12 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
 
       if (mounted) {
         setState(() {
+          // IF WE ALREADY HAVE A PRIZE FROM WIDGET, USE IT AS FALLBACK
+          if (loadedPrizes.isEmpty &&
+              widget.prizeWon != null &&
+              widget.playerPosition > 0) {
+            loadedPrizes[widget.playerPosition.toString()] = widget.prizeWon!;
+          }
           _prizes = loadedPrizes;
         });
         debugPrint("🏆 Prizes loaded: $_prizes");
@@ -171,11 +195,45 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
         }
 
         retries++;
-        debugPrint("⏳ Podium DB empty. Waiting for backend... (Retry $retries/$maxRetries)");
+        debugPrint(
+            "⏳ Podium DB empty. Waiting for backend... (Retry $retries/$maxRetries)");
         await Future.delayed(const Duration(seconds: 1));
       }
 
-      debugPrint("🏆 Podium DB: Found ${topPlayers.length} finishers with final_placement");
+      debugPrint(
+          "🏆 Podium DB: Found ${topPlayers.length} finishers with final_placement");
+
+      if (topPlayers.isEmpty) {
+        // FALLBACK: Use get_event_leaderboard RPC (more reliable on Android)
+        debugPrint(
+            "⚠️ Podium: final_placement query empty. Trying leaderboard RPC fallback...");
+        try {
+          final leaderboardData = await supabase.rpc(
+            'get_event_leaderboard',
+            params: {'target_event_id': widget.eventId},
+          );
+          if (leaderboardData != null &&
+              leaderboardData is List &&
+              leaderboardData.isNotEmpty) {
+            debugPrint(
+                "✅ Leaderboard RPC returned ${leaderboardData.length} entries");
+            // Build podium from leaderboard (top 3)
+            final top3 = leaderboardData.take(3).toList();
+            topPlayers = top3.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final p = entry.value as Map<String, dynamic>;
+              return {
+                'user_id': p['user_id'],
+                'final_placement': idx + 1,
+                'completed_clues_count':
+                    p['completed_clues_count'] ?? p['completed_clues'] ?? 0,
+              };
+            }).toList();
+          }
+        } catch (e) {
+          debugPrint("❌ Leaderboard RPC fallback failed: $e");
+        }
+      }
 
       if (topPlayers.isEmpty) {
         if (mounted) {
@@ -183,7 +241,6 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
             _podiumWinners = [];
             _isLoadingPodium = false;
             _podiumFetchCompleted = true;
-            if (_isLoading) _isLoading = false;
           });
         }
         return;
@@ -216,13 +273,16 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
           'avatar_id': profile['avatar_id'],
           'avatar_url': profile['avatar_url'] ?? '',
           'final_placement': (p['final_placement'] as num).toInt(),
-          'completed_clues_count': (p['completed_clues_count'] as num?)?.toInt() ?? 0,
+          'completed_clues_count':
+              (p['completed_clues_count'] as num?)?.toInt() ?? 0,
         });
       }
 
       // Also fetch the current user's final_placement to set _currentPosition
-      final playerProvider = Provider.of<PlayerProvider>(context, listen: false);
-      final currentUserId = playerProvider.currentPlayer?.userId ?? playerProvider.currentPlayer?.id;
+      final playerProvider =
+          Provider.of<PlayerProvider>(context, listen: false);
+      final currentUserId = playerProvider.currentPlayer?.userId ??
+          playerProvider.currentPlayer?.id;
 
       if (currentUserId != null) {
         try {
@@ -234,10 +294,15 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
               .maybeSingle();
 
           if (myPlacement != null) {
-            final int dbPosition = myPlacement['final_placement'] != null ? (myPlacement['final_placement'] as num).toInt() : 0;
-            final int clues = myPlacement['completed_clues_count'] != null ? (myPlacement['completed_clues_count'] as num).toInt() : 0;
-            
-            debugPrint("🏆 My DB final_placement: $dbPosition, Clues completed: $clues");
+            final int dbPosition = myPlacement['final_placement'] != null
+                ? (myPlacement['final_placement'] as num).toInt()
+                : 0;
+            final int clues = myPlacement['completed_clues_count'] != null
+                ? (myPlacement['completed_clues_count'] as num).toInt()
+                : 0;
+
+            debugPrint(
+                "🏆 My DB final_placement: $dbPosition, Clues completed: $clues");
             if (mounted) {
               setState(() {
                 if (dbPosition > 0) _finalPosition = dbPosition;
@@ -260,10 +325,12 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
           _podiumWinners = winners;
           _isLoadingPodium = false;
           _podiumFetchCompleted = true;
-          // Release the main loading gate now that podium data is resolved
-          if (_isLoading) _isLoading = false;
+          // Note: We still don't set _isLoading = false here.
+          // We wait for _updatePositionFromLeaderboard to find OUR rank
+          // OR for the safety timeout.
         });
-        debugPrint("🏆 Podium winners loaded: ${winners.map((w) => '${w['name']}=#${w['final_placement']}').join(', ')}");
+        debugPrint(
+            "🏆 Podium winners loaded: ${winners.map((w) => '${w['name']}=#${w['final_placement']}').join(', ')}");
       }
     } catch (e) {
       debugPrint("⚠️ Error fetching podium winners: $e");
@@ -295,19 +362,19 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
       // If the leaderboard says I have fewer clues than I actually completed, it's stale.
       if (currentUser.completedCluesCount < widget.totalCluesCompleted) {
         debugPrint(
-            "⏳ Podium Sync: Leaderboard stale (Server: ${currentUser.completedCluesCount} vs Local: ${widget.totalCluesCompleted}). Waiting...");
-        
-        // RETRY LOGIC: If data is stale, we MUST force a refresh, even if isLoading is false.
-        // We use a debounce to avoid spamming.
+            "⏳ Podium Sync: Leaderboard stale (Server: ${currentUser.completedCluesCount} vs Local: ${widget.totalCluesCompleted}).");
+
+        // If it's only slightly stale (within 1 clue), we might want to proceed to avoid infinite wait
+        // but for now, we trigger a refresh.
         if (!gameProvider.isLoading) {
-           Future.delayed(const Duration(milliseconds: 1000), () {
-              if (mounted) {
-                 debugPrint("🔄 Podium Sync: Retrying fetchLeaderboard...");
-                 gameProvider.fetchLeaderboard(silent: true);
-              }
-           });
+          Future.delayed(const Duration(milliseconds: 1000), () {
+            if (mounted) {
+              debugPrint("🔄 Podium Sync: Retrying fetchLeaderboard...");
+              gameProvider.fetchLeaderboard(silent: true);
+            }
+          });
         }
-        return;
+        // return; // REMOVED: Don't return here. Allow it to find the ID even if xp is slightly behind.
       }
 
       final index = gameProvider.leaderboard
@@ -329,9 +396,9 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
           if (_finalPosition == 0 && newPos > 0) {
             _finalPosition = newPos;
           }
-          // Only release loading gate if podium fetch has completed
-          // This prevents showing "No participaste" before DB data arrives
-          if (_podiumFetchCompleted) {
+
+          // RESOLVED: If we found a rank > 0, we can finally stop loading!
+          if (_finalPosition > 0) {
             _isLoading = false;
           }
         });
@@ -346,12 +413,12 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
     } else {
       // Leaderboard empty/failed?
       if (!gameProvider.isLoading && _isLoading) {
-         debugPrint("⚠️ Podium Sync: Leaderboard empty. Retrying...");
-         Future.delayed(const Duration(seconds: 2), () {
-             if (mounted && !gameProvider.isLoading) {
-                 gameProvider.fetchLeaderboard(silent: true);
-             }
-         });
+        debugPrint("⚠️ Podium Sync: Leaderboard empty. Retrying...");
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && !gameProvider.isLoading) {
+            gameProvider.fetchLeaderboard(silent: true);
+          }
+        });
       }
     }
   }
@@ -489,7 +556,10 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                 const SizedBox(height: 16),
                 const Text(
                   'Cerrar Sesión',
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
                 const Text(
@@ -503,7 +573,10 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                     Expanded(
                       child: TextButton(
                         onPressed: () => Navigator.pop(ctx),
-                        child: const Text('CANCELAR', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold)),
+                        child: const Text('CANCELAR',
+                            style: TextStyle(
+                                color: Colors.white54,
+                                fontWeight: FontWeight.bold)),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -514,7 +587,8 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                           await playerProvider.logout();
                           if (mounted) {
                             Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(builder: (_) => const LoginScreen()),
+                              MaterialPageRoute(
+                                  builder: (_) => const LoginScreen()),
                               (route) => false,
                             );
                           }
@@ -523,9 +597,12 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                           backgroundColor: currentRed,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('SALIR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        child: const Text('SALIR',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
                       ),
                     ),
                   ],
@@ -542,10 +619,13 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
   Widget build(BuildContext context) {
     final gameProvider = Provider.of<GameProvider>(context);
     final playerProvider = Provider.of<PlayerProvider>(context);
-    final currentPlayerId = playerProvider.currentPlayer?.userId ?? playerProvider.currentPlayer?.id ?? '';
+    final currentPlayerId = playerProvider.currentPlayer?.userId ??
+        playerProvider.currentPlayer?.id ??
+        '';
     final isNightImage = playerProvider.isDarkMode;
 
-    debugPrint("🏆 WinnerScreen Build: eventId=${widget.eventId}, leaderboardSize=${gameProvider.leaderboard.length}, isLoading=${gameProvider.isLoading}, internalIsLoading=$_isLoading");
+    debugPrint(
+        "🏆 WinnerScreen Build: eventId=${widget.eventId}, leaderboardSize=${gameProvider.leaderboard.length}, isLoading=${gameProvider.isLoading}, internalIsLoading=$_isLoading");
 
     return WillPopScope(
       onWillPop: () async => false, // Prevent back button
@@ -593,143 +673,144 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                 ),
               ),
             ),
-              // Confetti overlay - main rain
-              Align(
-                alignment: Alignment.topCenter,
-                child: ConfettiWidget(
-                  confettiController: _confettiController,
-                  blastDirection: pi / 2, // Down
-                  maxBlastForce: 5,
-                  minBlastForce: 2,
-                  emissionFrequency: 0.03,
-                  numberOfParticles: 30,
-                  gravity: 0.2,
-                  shouldLoop: true,
-                  colors: const [
-                    Colors.green,
-                    Colors.blue,
-                    Colors.pink,
-                    Colors.orange,
-                    Colors.purple,
-                    Color(0xFFFFD700),
-                    Colors.cyan,
-                    Colors.redAccent,
-                  ],
-                ),
+            // Confetti overlay - main rain
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConfettiWidget(
+                confettiController: _confettiController,
+                blastDirection: pi / 2, // Down
+                maxBlastForce: 5,
+                minBlastForce: 2,
+                emissionFrequency: 0.03,
+                numberOfParticles: 30,
+                gravity: 0.2,
+                shouldLoop: true,
+                colors: const [
+                  Colors.green,
+                  Colors.blue,
+                  Colors.pink,
+                  Colors.orange,
+                  Colors.purple,
+                  Color(0xFFFFD700),
+                  Colors.cyan,
+                  Colors.redAccent,
+                ],
               ),
-              // Firework - Left burst
-              Align(
-                alignment: const Alignment(-0.8, 0.3),
-                child: ConfettiWidget(
-                  confettiController: _fireworkLeftController,
-                  blastDirectionality: BlastDirectionality.explosive,
-                  maxBlastForce: 25,
-                  minBlastForce: 10,
-                  emissionFrequency: 0.0,
-                  numberOfParticles: 40,
-                  gravity: 0.15,
-                  particleDrag: 0.05,
-                  colors: const [
-                    Color(0xFFFFD700),
-                    Colors.orange,
-                    Colors.redAccent,
-                    Colors.yellowAccent,
-                  ],
-                ),
+            ),
+            // Firework - Left burst
+            Align(
+              alignment: const Alignment(-0.8, 0.3),
+              child: ConfettiWidget(
+                confettiController: _fireworkLeftController,
+                blastDirectionality: BlastDirectionality.explosive,
+                maxBlastForce: 25,
+                minBlastForce: 10,
+                emissionFrequency: 0.0,
+                numberOfParticles: 40,
+                gravity: 0.15,
+                particleDrag: 0.05,
+                colors: const [
+                  Color(0xFFFFD700),
+                  Colors.orange,
+                  Colors.redAccent,
+                  Colors.yellowAccent,
+                ],
               ),
-              // Firework - Right burst
-              Align(
-                alignment: const Alignment(0.8, 0.2),
-                child: ConfettiWidget(
-                  confettiController: _fireworkRightController,
-                  blastDirectionality: BlastDirectionality.explosive,
-                  maxBlastForce: 25,
-                  minBlastForce: 10,
-                  emissionFrequency: 0.0,
-                  numberOfParticles: 40,
-                  gravity: 0.15,
-                  particleDrag: 0.05,
-                  colors: const [
-                    Colors.cyan,
-                    Colors.blue,
-                    Colors.purpleAccent,
-                    Colors.greenAccent,
-                  ],
-                ),
+            ),
+            // Firework - Right burst
+            Align(
+              alignment: const Alignment(0.8, 0.2),
+              child: ConfettiWidget(
+                confettiController: _fireworkRightController,
+                blastDirectionality: BlastDirectionality.explosive,
+                maxBlastForce: 25,
+                minBlastForce: 10,
+                emissionFrequency: 0.0,
+                numberOfParticles: 40,
+                gravity: 0.15,
+                particleDrag: 0.05,
+                colors: const [
+                  Colors.cyan,
+                  Colors.blue,
+                  Colors.purpleAccent,
+                  Colors.greenAccent,
+                ],
               ),
-              // Firework - Center burst
-              Align(
-                alignment: const Alignment(0.0, -0.2),
-                child: ConfettiWidget(
-                  confettiController: _fireworkCenterController,
-                  blastDirectionality: BlastDirectionality.explosive,
-                  maxBlastForce: 30,
-                  minBlastForce: 12,
-                  emissionFrequency: 0.0,
-                  numberOfParticles: 50,
-                  gravity: 0.12,
-                  particleDrag: 0.05,
-                  colors: const [
-                    Color(0xFFFFD700),
-                    Colors.pink,
-                    Colors.white,
-                    Colors.amber,
-                    Colors.deepPurple,
-                  ],
-                ),
+            ),
+            // Firework - Center burst
+            Align(
+              alignment: const Alignment(0.0, -0.2),
+              child: ConfettiWidget(
+                confettiController: _fireworkCenterController,
+                blastDirectionality: BlastDirectionality.explosive,
+                maxBlastForce: 30,
+                minBlastForce: 12,
+                emissionFrequency: 0.0,
+                numberOfParticles: 50,
+                gravity: 0.12,
+                particleDrag: 0.05,
+                colors: const [
+                  Color(0xFFFFD700),
+                  Colors.pink,
+                  Colors.white,
+                  Colors.amber,
+                  Colors.deepPurple,
+                ],
               ),
+            ),
 
-              if (_isLoading)
-                const Center(
+            if (_isLoading)
+              const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: AppTheme.accentGold),
+                    SizedBox(height: 20),
+                    Text("Calculando resultados finales...",
+                        style: TextStyle(color: Colors.white70)),
+                  ],
+                ),
+              )
+            else
+              SafeArea(
+                child: SingleChildScrollView(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(color: AppTheme.accentGold),
-                      SizedBox(height: 20),
-                      Text("Calculando resultados finales...",
-                          style: TextStyle(color: Colors.white70)),
-                    ],
-                  ),
-                )
-              else
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 20),
-                    child: Column(
-                      children: [
-                        // Title
-                        const Text(
-                          'Resultados del Evento',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFFFD700),
-                          ),
-                          textAlign: TextAlign.center,
+                      // Title
+                      const Text(
+                        'Resultados del Evento',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFFFD700),
                         ),
-                            const SizedBox(height: 10),
-                            if (_finalPosition > 0)
-                              ClipRRect(
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 10),
+                      if (_finalPosition > 0)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D0D0F).withOpacity(0.6),
                                 borderRadius: BorderRadius.circular(24),
-                                child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(5),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0D0D0F).withOpacity(0.6),
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: Border.all(
-                                          color: _getPositionColor().withOpacity(0.6),
-                                          width: 1.5),
-                                    ),
-                                    child: Container(
+                                border: Border.all(
+                                    color: _getPositionColor().withOpacity(0.6),
+                                    width: 1.5),
+                              ),
+                              child: Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 30, vertical: 15),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                      color: _getPositionColor().withOpacity(0.2),
+                                      color:
+                                          _getPositionColor().withOpacity(0.2),
                                       width: 1.0),
                                   color: _getPositionColor().withOpacity(0.02),
                                 ),
@@ -831,235 +912,127 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                                     )
                                   ]
                                 ]),
-                                  ),
-                                  ),
-                                ),
-                              )
-                            else if (_isLoadingPodium)
-                              // Still loading podium data — don't show "No participaste" yet
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(24),
-                                child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(5),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0D0D0F).withOpacity(0.6),
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: Border.all(
-                                          color: AppTheme.accentGold.withOpacity(0.6),
-                                          width: 1.5),
-                                    ),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 20, vertical: 16),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                            color: AppTheme.accentGold.withOpacity(0.2),
-                                            width: 1.0),
-                                        color: AppTheme.accentGold.withOpacity(0.02),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: AppTheme.accentGold,
-                                            ),
-                                          ),
-                                          SizedBox(width: 12),
-                                          Text(
-                                            'Cargando tu posición...',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                                color: Colors.white70, fontSize: 14),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(24),
-                                child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(5),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0D0D0F).withOpacity(0.6),
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: Border.all(
-                                          color: AppTheme.primaryPurple.withOpacity(0.6),
-                                          width: 1.5),
-                                    ),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 20, vertical: 12),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                            color: AppTheme.primaryPurple.withOpacity(0.2),
-                                            width: 1.0),
-                                        color: AppTheme.primaryPurple.withOpacity(0.02),
-                                      ),
-                                      child: const Text(
-                                        'No participaste en esta competencia.\nAquí tienes el podio final:',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                            color: Colors.white70, fontSize: 14),
-                                      ),
-                                    ),
-                                  ),
-                                ),
                               ),
-
-                        const Spacer(),
-
-                        // Top 3 Podium (from game_players.final_placement)
-                        if (_podiumWinners.isNotEmpty)
-                          Builder(builder: (context) {
-                            final first = _podiumWinners.firstWhere(
-                                (w) => w['final_placement'] == 1,
-                                orElse: () => {});
-                            final second = _podiumWinners.firstWhere(
-                                (w) => w['final_placement'] == 2,
-                                orElse: () => {});
-                            final third = _podiumWinners.firstWhere(
-                                (w) => w['final_placement'] == 3,
-                                orElse: () => {});
-
-                            return Column(
-                              children: [
-                                const Text(
-                                  'PODIO DE LA CARRERA',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 2,
-                                    fontFamily: 'Orbitron',
-                                  ),
+                            ),
+                          ),
+                        )
+                      else if (_isLoadingPodium)
+                        // Still loading podium data — don't show "No participaste" yet
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D0D0F).withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                    color: AppTheme.accentGold.withOpacity(0.6),
+                                    width: 1.5),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 16),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                      color:
+                                          AppTheme.accentGold.withOpacity(0.2),
+                                      width: 1.0),
+                                  color: AppTheme.accentGold.withOpacity(0.02),
                                 ),
-                                const SizedBox(height: 20),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(24),
-                                  child: BackdropFilter(
-                                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(5),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF0D0D0F).withOpacity(0.6),
-                                        borderRadius: BorderRadius.circular(24),
-                                        border: Border.all(
-                                            color: AppTheme.accentGold.withOpacity(0.6),
-                                            width: 1.5),
-                                      ),
-                                      child: Container(
-                                        clipBehavior: Clip.antiAlias,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(
-                                              color: AppTheme.accentGold.withOpacity(0.2),
-                                              width: 1.0),
-                                          color: AppTheme.accentGold.withOpacity(0.02),
-                                        ),
-                                        child: IntrinsicHeight(
-                                          child: Row(
-                                            crossAxisAlignment: CrossAxisAlignment.end,
-                                            children: [
-                                              // 2nd place
-                                              if (second.isNotEmpty)
-                                                Expanded(
-                                                  child: _buildPodiumColumn(
-                                                    second, 2, 90,
-                                                    const Color(0xFFC0C0C0),
-                                                  ),
-                                                )
-                                              else
-                                                const Expanded(child: SizedBox()),
-                                              // 1st place
-                                              if (first.isNotEmpty)
-                                                Expanded(
-                                                  child: _buildPodiumColumn(
-                                                    first, 1, 120,
-                                                    const Color(0xFFFFD700),
-                                                  ),
-                                                )
-                                              else
-                                                const Expanded(child: SizedBox()),
-                                              // 3rd place
-                                              if (third.isNotEmpty)
-                                                Expanded(
-                                                  child: _buildPodiumColumn(
-                                                    third, 3, 70,
-                                                    const Color(0xFFCD7F32),
-                                                  ),
-                                                )
-                                              else
-                                                const Expanded(child: SizedBox()),
-                                            ],
-                                          ),
-                                        ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppTheme.accentGold,
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          })
-                        else if (_isLoadingPodium)
-                          const CircularProgressIndicator(color: AppTheme.accentGold)
-                        else
-                          const Text(
-                            'No hay resultados disponibles',
-                            style: TextStyle(color: Colors.white54),
-                          ),
-
-                        const Spacer(),
-
-                        // Final Info and Button
-                        Column(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: BackdropFilter(
-                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.08),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.stars,
-                                          color: Colors.white, size: 20),
-                                      const SizedBox(width: 10),
-                                      Text(
-                                        '$_completedClues Pistas completadas',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      'Cargando tu posición...',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 14),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ClipRRect(
+                          ),
+                        )
+                      else
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D0D0F).withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                    color:
+                                        AppTheme.primaryPurple.withOpacity(0.6),
+                                    width: 1.5),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 12),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                      color: AppTheme.primaryPurple
+                                          .withOpacity(0.2),
+                                      width: 1.0),
+                                  color:
+                                      AppTheme.primaryPurple.withOpacity(0.02),
+                                ),
+                                child: const Text(
+                                  'No participaste en esta competencia.\nAquí tienes el podio final:',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 14),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 20),
+
+                      // Top 3 Podium (from game_players.final_placement)
+                      if (_podiumWinners.isNotEmpty)
+                        Builder(builder: (context) {
+                          final first = _podiumWinners.firstWhere(
+                              (w) => w['final_placement'] == 1,
+                              orElse: () => {});
+                          final second = _podiumWinners.firstWhere(
+                              (w) => w['final_placement'] == 2,
+                              orElse: () => {});
+                          final third = _podiumWinners.firstWhere(
+                              (w) => w['final_placement'] == 3,
+                              orElse: () => {});
+
+                          return Column(
+                            children: [
+                              const Text(
+                                'PODIO DE LA CARRERA',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 2,
+                                  fontFamily: 'Orbitron',
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              ClipRRect(
                                 borderRadius: BorderRadius.circular(24),
                                 child: BackdropFilter(
                                   filter:
@@ -1067,47 +1040,201 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                                   child: Container(
                                     padding: const EdgeInsets.all(5),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF0D0D0F).withOpacity(0.6),
+                                      color: const Color(0xFF0D0D0F)
+                                          .withOpacity(0.6),
                                       borderRadius: BorderRadius.circular(24),
                                       border: Border.all(
-                                          color: const Color(0xFF9D4EDD).withOpacity(0.6),
+                                          color: AppTheme.accentGold
+                                              .withOpacity(0.6),
                                           width: 1.5),
                                     ),
                                     child: Container(
+                                      clipBehavior: Clip.antiAlias,
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(20),
                                         border: Border.all(
-                                            color: const Color(0xFF9D4EDD).withOpacity(0.2),
+                                            color: AppTheme.accentGold
+                                                .withOpacity(0.2),
                                             width: 1.0),
-                                        color: const Color(0xFF9D4EDD).withOpacity(0.02),
+                                        color: AppTheme.accentGold
+                                            .withOpacity(0.02),
                                       ),
-                                      child: TextButton(
-                                        onPressed: () {
-                                          Navigator.of(context).pushAndRemoveUntil(
-                                            MaterialPageRoute(
-                                                builder: (_) =>
-                                                    const ScenariosScreen()),
-                                            (route) => false,
-                                          );
-                                        },
-                                        style: TextButton.styleFrom(
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 18),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                          ),
+                                      child: IntrinsicHeight(
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            // 2nd place
+                                            if (second.isNotEmpty)
+                                              Expanded(
+                                                child: _buildPodiumColumn(
+                                                  second,
+                                                  2,
+                                                  90,
+                                                  const Color(0xFFC0C0C0),
+                                                ),
+                                              )
+                                            else
+                                              const Expanded(child: SizedBox()),
+                                            // 1st place
+                                            if (first.isNotEmpty)
+                                              Expanded(
+                                                child: _buildPodiumColumn(
+                                                  first,
+                                                  1,
+                                                  120,
+                                                  const Color(0xFFFFD700),
+                                                ),
+                                              )
+                                            else
+                                              const Expanded(child: SizedBox()),
+                                            // 3rd place
+                                            if (third.isNotEmpty)
+                                              Expanded(
+                                                child: _buildPodiumColumn(
+                                                  third,
+                                                  3,
+                                                  70,
+                                                  const Color(0xFFCD7F32),
+                                                ),
+                                              )
+                                            else
+                                              const Expanded(child: SizedBox()),
+                                          ],
                                         ),
-                                        child: const Text(
-                                          'VOLVER AL INICIO',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 1.5,
-                                            fontFamily: 'Orbitron',
-                                            color: Colors.white,
-                                          ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        })
+                      else if (_isLoadingPodium)
+                        const CircularProgressIndicator(
+                            color: AppTheme.accentGold)
+                      else
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Column(
+                            children: [
+                              const Icon(Icons.query_stats,
+                                  color: Colors.white24, size: 48),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No hay resultados disponibles',
+                                style: TextStyle(
+                                    color: Colors.white54, fontSize: 16),
+                              ),
+                              const SizedBox(height: 12),
+                              TextButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _isLoadingPodium = true;
+                                    _podiumFetchCompleted = false;
+                                  });
+                                  _fetchPodiumWinners();
+                                },
+                                icon: const Icon(Icons.refresh,
+                                    color: Colors.white70, size: 18),
+                                label: const Text('Reintentar',
+                                    style: TextStyle(color: Colors.white70)),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      const SizedBox(height: 20),
+
+                      // Final Info and Button
+                      Column(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.stars,
+                                        color: Colors.white, size: 20),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      '$_completedClues Pistas completadas',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(24),
+                              child: BackdropFilter(
+                                filter:
+                                    ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0D0D0F)
+                                        .withOpacity(0.6),
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                        color: const Color(0xFF9D4EDD)
+                                            .withOpacity(0.6),
+                                        width: 1.5),
+                                  ),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                          color: const Color(0xFF9D4EDD)
+                                              .withOpacity(0.2),
+                                          width: 1.0),
+                                      color: const Color(0xFF9D4EDD)
+                                          .withOpacity(0.02),
+                                    ),
+                                    child: TextButton(
+                                      onPressed: () {
+                                        Navigator.of(context)
+                                            .pushAndRemoveUntil(
+                                          MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const ScenariosScreen()),
+                                          (route) => false,
+                                        );
+                                      },
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 18),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'VOLVER AL INICIO',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.5,
+                                          fontFamily: 'Orbitron',
+                                          color: Colors.white,
                                         ),
                                       ),
                                     ),
@@ -1115,63 +1242,64 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                   ),
                 ),
-              // Logout button - top right corner
-              Positioned(
-                top: 0,
-                right: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 10, right: 8),
-                    child: GestureDetector(
-                      onTap: _showLogoutDialog,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppTheme.dangerRed.withOpacity(0.3),
-                            width: 1,
-                          ),
+              ),
+            // Logout button - top right corner
+            Positioned(
+              top: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10, right: 8),
+                  child: GestureDetector(
+                    onTap: _showLogoutDialog,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppTheme.dangerRed.withOpacity(0.3),
+                          width: 1,
                         ),
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: AppTheme.dangerRed.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: AppTheme.dangerRed,
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.dangerRed.withOpacity(0.3),
-                                blurRadius: 8,
-                                spreadRadius: 1,
-                              )
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.logout_rounded,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppTheme.dangerRed.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
                             color: AppTheme.dangerRed,
-                            size: 22,
+                            width: 2,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.dangerRed.withOpacity(0.3),
+                              blurRadius: 8,
+                              spreadRadius: 1,
+                            )
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.logout_rounded,
+                          color: AppTheme.dangerRed,
+                          size: 22,
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
   }
 
   Color _getPositionColorForRank(int rank) {
@@ -1201,7 +1329,8 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
   }
 
   /// Builds one full podium column from a Map (from _podiumWinners DB data)
-  Widget _buildPodiumColumn(Map<String, dynamic> winner, int position, double barHeight, Color color) {
+  Widget _buildPodiumColumn(Map<String, dynamic> winner, int position,
+      double barHeight, Color color) {
     final String name = winner['name'] ?? 'Jugador';
     String? avatarId = winner['avatar_id']?.toString();
     final String avatarUrl = winner['avatar_url']?.toString() ?? '';
@@ -1237,11 +1366,12 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                         return Image.asset(
                           'assets/images/avatars/$avatarId.png',
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.person, color: Colors.white70, size: 22),
+                          errorBuilder: (_, __, ___) => const Icon(Icons.person,
+                              color: Colors.white70, size: 22),
                         );
                       }
-                      if (avatarUrl.isNotEmpty && avatarUrl.startsWith('http')) {
+                      if (avatarUrl.isNotEmpty &&
+                          avatarUrl.startsWith('http')) {
                         return Image.network(
                           avatarUrl,
                           fit: BoxFit.cover,
@@ -1249,7 +1379,8 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
                               color: Colors.white70, size: 22),
                         );
                       }
-                      return const Icon(Icons.person, color: Colors.white70, size: 22);
+                      return const Icon(Icons.person,
+                          color: Colors.white70, size: 22);
                     },
                   ),
                 ),
@@ -1299,19 +1430,22 @@ class _WinnerCelebrationScreenState extends State<WinnerCelebrationScreen> {
             alignment: Alignment.bottomRight,
             child: Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: Text(
-                '$position',
-                style: TextStyle(
-                  fontSize: 56,
-                  fontWeight: FontWeight.w900,
-                  height: 0.8,
-                  color: color.withOpacity(0.7),
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withOpacity(0.5),
-                      blurRadius: 4,
-                    ),
-                  ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '$position',
+                  style: TextStyle(
+                    fontSize: 44, // Reduced from 56
+                    fontWeight: FontWeight.w900,
+                    height: 0.8,
+                    color: color.withOpacity(0.7),
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.5),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1345,19 +1479,21 @@ class _LaurelWreathPainter extends CustomPainter {
     // Draw U-shaped stem arc (open at the top) - brought closer to avatar
     final rect = Rect.fromCircle(center: center, radius: radius * 0.68);
     // Start at ~1:30 o'clock and sweep through the bottom to ~10:30 o'clock
-    canvas.drawArc(rect, -4/14 * pi, 22/14 * pi, false, stemPaint);
+    canvas.drawArc(rect, -4 / 14 * pi, 22 / 14 * pi, false, stemPaint);
 
     // Draw leaves in a circular "clock" distribution with a gap at the top
-    final int totalLeaves = 14; 
+    final int totalLeaves = 14;
     for (int i = 0; i < totalLeaves; i++) {
       // Skip the top 3 positions to leave it open at the top (11, 12, 1 o'clock)
       if (i == 0 || i == 1 || i == totalLeaves - 1) continue;
-      
+
       // Distribute evenly around the circle
       final angle = (2 * pi * i / totalLeaves) - pi / 2;
-      
-      _drawReferenceLeaf(canvas, center, radius * 0.68, angle, leafPaint, isOuter: true);
-      _drawReferenceLeaf(canvas, center, radius * 0.68, angle, leafPaint, isOuter: false);
+
+      _drawReferenceLeaf(canvas, center, radius * 0.68, angle, leafPaint,
+          isOuter: true);
+      _drawReferenceLeaf(canvas, center, radius * 0.68, angle, leafPaint,
+          isOuter: false);
     }
   }
 
@@ -1372,7 +1508,7 @@ class _LaurelWreathPainter extends CustomPainter {
 
     // Point leaf radially with a strong tilt to the right (+0.5 radians)
     double rotation = isOuter ? angle + 0.5 : angle + pi + 0.5;
-    
+
     canvas.rotate(rotation + pi / 2);
 
     // Make inner leaves slightly smaller for better aesthetics
@@ -1396,4 +1532,3 @@ class _LaurelWreathPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-

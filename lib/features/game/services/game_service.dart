@@ -101,30 +101,32 @@ class GameService {
           .order('last_active', ascending: true)
           .limit(50);
 
-      // --- INVISIBILITY FILTER --- 
+      // --- INVISIBILITY FILTER ---
       // Fetch currently invisible players to exclude them from the list
       try {
         final invisiblePlayers = await _supabase
-           .from('active_powers')
-           .select('target_id')
-           .eq('event_id', eventId)
-           .eq('power_slug', 'invisibility')
-           .gt('expires_at', DateTime.now().toUtc().toIso8601String());
-        
-        final Set<String> invisibleIds = invisiblePlayers.map((e) => e['target_id']?.toString() ?? '').toSet();
-        
+            .from('active_powers')
+            .select('target_id')
+            .eq('event_id', eventId)
+            .eq('power_slug', 'invisibility')
+            .gt('expires_at', DateTime.now().toUtc().toIso8601String());
+
+        final Set<String> invisibleIds = invisiblePlayers
+            .map((e) => e['target_id']?.toString() ?? '')
+            .toSet();
+
         if (invisibleIds.isNotEmpty) {
-           // Remove invisible players from the main list (unless it's ME checking my own rank?)
-           // Requirement: "demás usuarios pueden verlo... debería de no aparecer"
-           // Usually I should still see MYSELF even if invisible.
-           leaderboardData.removeWhere((p) {
-              final pid = p['game_player_id']?.toString() ?? p['id']?.toString();
-              // Keep myself visible to me
-              final uid = p['user_id']?.toString();
-              if (currentUserId != null && uid == currentUserId) return false;
-              
-              return invisibleIds.contains(pid);
-           });
+          // Remove invisible players from the main list (unless it's ME checking my own rank?)
+          // Requirement: "demás usuarios pueden verlo... debería de no aparecer"
+          // Usually I should still see MYSELF even if invisible.
+          leaderboardData.removeWhere((p) {
+            final pid = p['game_player_id']?.toString() ?? p['id']?.toString();
+            // Keep myself visible to me
+            final uid = p['user_id']?.toString();
+            if (currentUserId != null && uid == currentUserId) return false;
+
+            return invisibleIds.contains(pid);
+          });
         }
       } catch (e) {
         debugPrint('Error filtering invisible players: $e');
@@ -158,7 +160,8 @@ class GameService {
                 leaderboardData.add(myData);
                 debugPrint("👻 Current user added to leaderboard list.");
               } else {
-                 debugPrint("👻 Current user found but is SPECTATOR. Not adding to race view.");
+                debugPrint(
+                    "👻 Current user found but is SPECTATOR. Not adding to race view.");
               }
             } else {
               debugPrint(
@@ -172,7 +175,8 @@ class GameService {
 
       if (leaderboardData.isNotEmpty) {
         debugPrint("📊 Sample Entry: ${leaderboardData.first}");
-        debugPrint("📊 Sample completed_clues_count: ${leaderboardData.first['completed_clues_count']}");
+        debugPrint(
+            "📊 Sample completed_clues_count: ${leaderboardData.first['completed_clues_count']}");
       } else {
         debugPrint("⚠️ getLeaderboard: NO DATA FOUND for event $eventId");
       }
@@ -204,7 +208,8 @@ class GameService {
         // Normalización de IDs obligatoria
         if (json['id'] == null) json['id'] = uid;
         // Map completed_clues_count to all expected keys
-        final int clueCount = json['completed_clues_count'] ?? json['completed_clues'] ?? 0;
+        final int clueCount =
+            json['completed_clues_count'] ?? json['completed_clues'] ?? 0;
         json['total_xp'] = clueCount;
         json['completed_clues'] = clueCount;
         json['completed_clues_count'] = clueCount;
@@ -269,6 +274,8 @@ class GameService {
             value: eventId,
           ),
           callback: (payload) {
+            debugPrint(
+                '📡 Realtime Progress: Update detected for event $eventId');
             // Notificar que hubo progreso (para refrescar UI)
             if (onProgressUpdate != null) {
               onProgressUpdate();
@@ -290,12 +297,16 @@ class GameService {
           ),
           callback: (payload) {
             final newRecord = payload.newRecord;
+            debugPrint(
+                '🏁 Realtime Event Status: ${newRecord['status']} for event $eventId');
             if (newRecord['status'] == 'completed') {
               onRaceCompleted(true, 'Realtime Event Status');
             }
           },
         )
-        .subscribe();
+        .subscribe((status, [error]) {
+      debugPrint('📡 Realtime Subscription Status: $status ${error ?? ""}');
+    });
   }
 
   /// Obtiene las pistas de un evento.
@@ -359,13 +370,13 @@ class GameService {
           if (eventIdToUse != null) {
             final rpcRes = await _registerFinisher(eventIdToUse);
             if (rpcRes != null && rpcRes['success'] == true) {
-               // Inject prize/position into response so UI knows
-               final newData = Map<String, dynamic>.from(data);
-               newData['prizeAmount'] = rpcRes['prize'];
-               newData['position'] = rpcRes['position'];
-               // CRITICAL: Ensure this flag is passed up
-               newData['raceCompletedGlobal'] = rpcRes['race_completed'];
-               return newData;
+              // Inject prize/position into response so UI knows
+              final newData = Map<String, dynamic>.from(data);
+              newData['prizeAmount'] = rpcRes['prize'];
+              newData['position'] = rpcRes['position'];
+              // CRITICAL: Ensure this flag is passed up
+              newData['raceCompletedGlobal'] = rpcRes['race_completed'];
+              return newData;
             }
           }
         }
@@ -590,6 +601,7 @@ class GameService {
       return [];
     }
   }
+
   /// Obtiene el estado de un game_player específico por su ID.
   /// Retorna el string del estado ('active', 'spectator', etc) o null si no existe.
   Future<String?> getGamePlayerStatus(String gamePlayerId) async {
@@ -619,18 +631,18 @@ class GameService {
           .select('user_id')
           .eq('id', gamePlayerId)
           .maybeSingle();
-      
+
       if (gp == null) return null;
-      
+
       final userId = gp['user_id'];
-      
+
       // 2. Get name from profiles
       final profile = await _supabase
           .from('profiles')
           .select('name')
           .eq('id', userId)
           .maybeSingle();
-          
+
       return profile?['name'] as String?;
     } catch (e) {
       debugPrint('GameService: Error getting player name: $e');

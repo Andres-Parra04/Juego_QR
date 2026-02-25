@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../core/services/terms_service.dart';
@@ -2362,7 +2362,11 @@ class _ScenariosScreenState extends State<ScenariosScreen>
                     // Custom AppBar
                     Padding(
                       padding: EdgeInsets.fromLTRB(
-                          20, MediaQuery.of(context).padding.top + (kIsWeb ? 8 : 20), 20, 0),
+                          20,
+                          MediaQuery.of(context).padding.top +
+                              (kIsWeb ? 8 : 20),
+                          20,
+                          0),
                       child: Stack(
                         clipBehavior: Clip.none,
                         alignment: Alignment.center,
@@ -2516,7 +2520,9 @@ class _ScenariosScreenState extends State<ScenariosScreen>
                     Center(
                       child: Image.asset(
                         'assets/images/logo4.1.png',
-                        height: kIsWeb ? 60 : 140, // Smaller on web for more card space
+                        height: kIsWeb
+                            ? 60
+                            : 140, // Smaller on web for more card space
                         fit: BoxFit.contain,
                       ),
                     ),
@@ -2564,8 +2570,7 @@ class _ScenariosScreenState extends State<ScenariosScreen>
                       ),
                     ),
 
-                    SizedBox(
-                        height: kIsWeb ? 2 : 5),
+                    SizedBox(height: kIsWeb ? 2 : 5),
 
                     // CONTROLES DE FILTRO
                     Padding(
@@ -2659,7 +2664,13 @@ class _ScenariosScreenState extends State<ScenariosScreen>
                                                         1.0, // Occupy 100% of available height
                                                     width: Curves.easeOut
                                                             .transform(value) *
-                                                        (kIsWeb ? math.min(constraints.maxWidth * 0.5, 500) : 360), // Wider on web, fixed on mobile
+                                                        (kIsWeb
+                                                            ? math.min(
+                                                                constraints
+                                                                        .maxWidth *
+                                                                    0.5,
+                                                                500)
+                                                            : 360), // Wider on web, fixed on mobile
                                                     child: child,
                                                   ),
                                                 ),
@@ -2865,8 +2876,7 @@ class _ScenariosScreenState extends State<ScenariosScreen>
                                                                         ScenarioCountdown(
                                                                             targetDate:
                                                                                 scenario.date!,
-                                                                            eventStatus:
-                                                                                scenario.status),
+                                                                            eventStatus: scenario.status),
 
                                                                       if (scenario.date !=
                                                                               null &&

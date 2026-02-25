@@ -837,26 +837,32 @@ void _showSuccessDialog(BuildContext context, Clue clue) async {
           '--- REFRESHING PROFILE END. New Coins: ${playerProvider.currentPlayer?.coins} ---');
     }
 
-    // Check if race was completed or if player completed all clues
-    if (gameProvider.isRaceCompleted || gameProvider.hasCompletedAllClues) {
-      // Get player position
-      int playerPosition = 0; // Default 0
+    // 🏆 Use authoritative data from server if available (from RPC)
+    int playerPosition = result['position'] ?? 0;
+    int? prizeWon = result['prizeAmount'];
+    bool raceCompletedGlobal =
+        result['raceCompletedGlobal'] ?? gameProvider.isRaceCompleted;
+
+    // Check if player completed all clues
+    if (raceCompletedGlobal || gameProvider.hasCompletedAllClues) {
       final currentPlayerId = playerProvider.currentPlayer?.id ?? '';
 
-      if (gameProvider.leaderboard.isNotEmpty) {
-        final index =
-            gameProvider.leaderboard.indexWhere((p) => p.id == currentPlayerId);
-        playerPosition =
-            index >= 0 ? index + 1 : gameProvider.leaderboard.length + 1;
-      } else {
-        playerPosition = 999; // Safe default
+      // Fallback for position if not provided by server
+      if (playerPosition == 0) {
+        if (gameProvider.leaderboard.isNotEmpty) {
+          final index = gameProvider.leaderboard
+              .indexWhere((p) => p.id == currentPlayerId);
+          playerPosition =
+              index >= 0 ? index + 1 : gameProvider.leaderboard.length + 1;
+        } else {
+          playerPosition = 999; // Safe default
+        }
       }
 
       // 🏆 LOGIC UPDATE: WAITING ROOM vs WINNER SCREEN
       // If the race is NOT globally completed yet (still active), but user finished -> Waiting Room
-      // If the race IS globally completed -> Winner Screen
-
-      if (!gameProvider.isRaceCompleted && gameProvider.hasCompletedAllClues) {
+      // EXCEPT if we just got word from RPC that it's completed (raceCompletedGlobal)
+      if (!raceCompletedGlobal && gameProvider.hasCompletedAllClues) {
         debugPrint(
             "🏆 User finished, but Race is still ACTIVE -> Going to Waiting Room");
         if (navigator.mounted) {
@@ -871,14 +877,17 @@ void _showSuccessDialog(BuildContext context, Clue clue) async {
         return;
       }
 
-      // Navigate to winner celebration screen if race IS completed
+      // Navigate to winner celebration screen if race IS completed (globally or just now)
       if (navigator.mounted) {
+        debugPrint(
+            "🏆 Navigating to Winners Screen with Position: $playerPosition, Prize: $prizeWon");
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => WinnerCelebrationScreen(
               eventId: gameProvider.currentEventId ?? '',
               playerPosition: playerPosition,
               totalCluesCompleted: gameProvider.completedClues,
+              prizeWon: prizeWon,
             ),
           ),
           (route) => route.isFirst,
@@ -941,7 +950,8 @@ void _showSuccessDialog(BuildContext context, Clue clue) async {
   }
   final showNextStep = nextClue != null;
   // Obtener el hint (ubicación) de la siguiente pista para mostrarlo al jugador
-  final String? nextClueHint = nextClue?.hint.isNotEmpty == true ? nextClue!.hint : null;
+  final String? nextClueHint =
+      nextClue?.hint.isNotEmpty == true ? nextClue!.hint : null;
 
   // 3. Mostrar el panel de celebración - OBLIGATORIO después del sello
   // [FIX] Usar navigator capturado para garantizar visualización
@@ -1131,7 +1141,6 @@ class FindDifferenceWrapper extends StatelessWidget {
             _showSuccessDialog(context, clue);
           }));
 }
-
 
 class MemorySequenceWrapper extends StatelessWidget {
   final Clue clue;
@@ -1397,155 +1406,164 @@ Widget _buildMinigameScaffold(
           ),
           // Content
           SafeArea(
-          child: Consumer<GameProvider>(
-            builder: (context, game, _) {
-              return Stack(
-                children: [
-                  Column(
-                    children: [
-                      // AppBar Personalizado
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 12, 
-                            vertical: (MediaQuery.of(context).size.width > 900) ? 2 : 8),
-                        child: Row(
-                          children: [
-                            if (player?.role == 'spectator')
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back,
-                                    color: Colors.white),
-                                onPressed: () => Navigator.pop(context),
-                              ),
-                            const Spacer(),
-                            if (player?.role != 'spectator') ...[
-                              // INDICADOR DE VIDAS CON ANIMACIÓN
-                              const ShieldBadge(), // NEW SHIELD WIDGET
-                              AnimatedLivesWidget(),
-                              const SizedBox(width: 10),
+            child: Consumer<GameProvider>(
+              builder: (context, game, _) {
+                return Stack(
+                  children: [
+                    Column(
+                      children: [
+                        // AppBar Personalizado
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical:
+                                  (MediaQuery.of(context).size.width > 900)
+                                      ? 2
+                                      : 8),
+                          child: Row(
+                            children: [
+                              if (player?.role == 'spectator')
+                                IconButton(
+                                  icon: const Icon(Icons.arrow_back,
+                                      color: Colors.white),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                              const Spacer(),
+                              if (player?.role != 'spectator') ...[
+                                // INDICADOR DE VIDAS CON ANIMACIÓN
+                                const ShieldBadge(), // NEW SHIELD WIDGET
+                                AnimatedLivesWidget(),
+                                const SizedBox(width: 10),
 
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.accentGold.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(15),
-                                  border:
-                                      Border.all(color: AppTheme.accentGold),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.star,
-                                        color: AppTheme.accentGold, size: 12),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '+${clue.xpReward} XP',
-                                      style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                icon: const Icon(Icons.flag,
-                                    color: AppTheme.dangerRed, size: 28),
-                                tooltip: 'Rendirse',
-                                onPressed: () =>
-                                    showSkipDialog(context, onFinish),
-                              ),
-                            ] else
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.blueAccent),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(Icons.visibility,
-                                        color: Colors.blueAccent, size: 14),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'MODO ESPECTADOR',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-
-                      Expanded(
-                        child: IgnorePointer(
-                          ignoring: player != null && player.isFrozen,
-                          child: LayoutBuilder(builder: (context, constraints) {
-                            final bool isWide = constraints.maxWidth > 900;
-                            
-                            return isScrollable
-                                ? SingleChildScrollView(
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                          minHeight: constraints.maxHeight),
-                                      child: Column(
-                                        children: [
-                                          // MAPA DENTRO DEL SCROLL
-                                          Padding(
-                                            padding: EdgeInsets.symmetric(
-                                                horizontal: isWide ? 100 : 16, vertical: 4),
-                                            child: RaceTrackWidget(
-                                              leaderboard: game.leaderboard,
-                                              currentPlayerId:
-                                                  player?.userId ?? '',
-                                              totalClues: game.clues.length,
-                                              onSurrender: () =>
-                                                  showSkipDialog(
-                                                      context, onFinish),
-                                              compact: true,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 5),
-                                          wrappedChild,
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                : Column(
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accentGold.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(15),
+                                    border:
+                                        Border.all(color: AppTheme.accentGold),
+                                  ),
+                                  child: Row(
                                     children: [
-                                      // MAPA FIJO (Default)
-                                      Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: isWide ? 100 : 16, vertical: 4),
-                                        child: RaceTrackWidget(
-                                          leaderboard: game.leaderboard,
-                                          currentPlayerId: player?.userId ?? '',
-                                          totalClues: game.clues.length,
-                                          onSurrender: () =>
-                                              showSkipDialog(context, onFinish),
-                                          compact: isWide || clue.puzzleType ==
-                                                  PuzzleType.tetris ||
-                                              clue.puzzleType ==
-                                                  PuzzleType.hangman ||
-                                              clue.puzzleType ==
-                                                  PuzzleType.fastNumber,
+                                      const Icon(Icons.star,
+                                          color: AppTheme.accentGold, size: 12),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '+${clue.xpReward} XP',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 10),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.flag,
+                                      color: AppTheme.dangerRed, size: 28),
+                                  tooltip: 'Rendirse',
+                                  onPressed: () =>
+                                      showSkipDialog(context, onFinish),
+                                ),
+                              ] else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border:
+                                        Border.all(color: Colors.blueAccent),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.visibility,
+                                          color: Colors.blueAccent, size: 14),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'MODO ESPECTADOR',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+
+                        Expanded(
+                          child: IgnorePointer(
+                            ignoring: player != null && player.isFrozen,
+                            child:
+                                LayoutBuilder(builder: (context, constraints) {
+                              final bool isWide = constraints.maxWidth > 900;
+
+                              return isScrollable
+                                  ? SingleChildScrollView(
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                            minHeight: constraints.maxHeight),
+                                        child: Column(
+                                          children: [
+                                            // MAPA DENTRO DEL SCROLL
+                                            Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                  horizontal: isWide ? 100 : 16,
+                                                  vertical: 4),
+                                              child: RaceTrackWidget(
+                                                leaderboard: game.leaderboard,
+                                                currentPlayerId:
+                                                    player?.userId ?? '',
+                                                totalClues: game.clues.length,
+                                                onSurrender: () =>
+                                                    showSkipDialog(
+                                                        context, onFinish),
+                                                compact: true,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 5),
+                                            wrappedChild,
+                                          ],
                                         ),
                                       ),
-                                      SizedBox(height: isWide ? 2 : 10),
-                                      Expanded(child: wrappedChild),
-                                    ],
-                                  );
-                          }),
+                                    )
+                                  : Column(
+                                      children: [
+                                        // MAPA FIJO (Default)
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: isWide ? 100 : 16,
+                                              vertical: 4),
+                                          child: RaceTrackWidget(
+                                            leaderboard: game.leaderboard,
+                                            currentPlayerId:
+                                                player?.userId ?? '',
+                                            totalClues: game.clues.length,
+                                            onSurrender: () => showSkipDialog(
+                                                context, onFinish),
+                                            compact: isWide ||
+                                                clue.puzzleType ==
+                                                    PuzzleType.tetris ||
+                                                clue.puzzleType ==
+                                                    PuzzleType.hangman ||
+                                                clue.puzzleType ==
+                                                    PuzzleType.fastNumber,
+                                          ),
+                                        ),
+                                        SizedBox(height: isWide ? 2 : 10),
+                                        Expanded(child: wrappedChild),
+                                      ],
+                                    );
+                            }),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
 
                     // EFECTO BLUR (Inyectado aquí)
                     // EFECTO BLUR (Inyectado aquí)

@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
-import 'dart:math';
 import 'dart:io';
 
 import 'package:latlong2/latlong.dart' as latlng;
@@ -179,12 +178,16 @@ class _EventCreationScreenState extends State<EventCreationScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    "Crear Nueva Competencia",
-                    style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white),
+                  const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Crear Nueva Competencia",
+                      style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   const Text(
@@ -217,43 +220,48 @@ class _EventCreationScreenState extends State<EventCreationScreen> {
 
                         SizedBox(
                           width: double.infinity,
-                          child: SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment<String>(
-                                value: 'on_site',
-                                label: Text('📍 Presencial'),
-                                icon: Icon(Icons.map),
-                              ),
-                              ButtonSegment<String>(
-                                value: 'online',
-                                label: Text('🌐 Online'),
-                                icon: Icon(Icons.public),
-                              ),
-                            ],
-                            selected: {provider.eventType},
-                            onSelectionChanged: (Set<String> newSelection) {
-                              provider.setEventType(newSelection.first);
-                            },
-                            style: ButtonStyle(
-                              backgroundColor:
-                                  MaterialStateProperty.resolveWith<Color>(
-                                (Set<MaterialState> states) {
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: SegmentedButton<String>(
+                              segments: const [
+                                ButtonSegment<String>(
+                                  value: 'on_site',
+                                  label: Text('📍 Presencial'),
+                                  icon: Icon(Icons.map),
+                                ),
+                                ButtonSegment<String>(
+                                  value: 'online',
+                                  label: Text('🌐 Online'),
+                                  icon: Icon(Icons.public),
+                                ),
+                              ],
+                              selected: {provider.eventType},
+                              onSelectionChanged: (Set<String> newSelection) {
+                                provider.setEventType(newSelection.first);
+                              },
+                              style: ButtonStyle(
+                                backgroundColor:
+                                    MaterialStateProperty.resolveWith<Color>(
+                                  (Set<MaterialState> states) {
+                                    if (states
+                                        .contains(MaterialState.selected)) {
+                                      return AppTheme.primaryPurple;
+                                    }
+                                    return Colors.transparent;
+                                  },
+                                ),
+                                foregroundColor:
+                                    MaterialStateProperty.resolveWith<Color>(
+                                        (Set<MaterialState> states) {
                                   if (states.contains(MaterialState.selected)) {
-                                    return AppTheme.primaryPurple;
+                                    return Colors.white;
                                   }
-                                  return Colors.transparent;
-                                },
+                                  return Colors.white70;
+                                }),
+                                side: MaterialStateProperty.all(BorderSide(
+                                    color: Colors.white.withOpacity(0.2))),
                               ),
-                              foregroundColor:
-                                  MaterialStateProperty.resolveWith<Color>(
-                                      (Set<MaterialState> states) {
-                                if (states.contains(MaterialState.selected)) {
-                                  return Colors.white;
-                                }
-                                return Colors.white70;
-                              }),
-                              side: MaterialStateProperty.all(BorderSide(
-                                  color: Colors.white.withOpacity(0.2))),
                             ),
                           ),
                         ),
@@ -713,41 +721,44 @@ class _EventCreationScreenState extends State<EventCreationScreen> {
                                               TextStyle(color: Colors.white)),
                                     ],
                                   ),
-                                  SegmentedButton<int>(
-                                    segments: const [
-                                      ButtonSegment<int>(
-                                          value: 1, label: Text("1")),
-                                      ButtonSegment<int>(
-                                          value: 2, label: Text("2")),
-                                      ButtonSegment<int>(
-                                          value: 3, label: Text("3")),
-                                    ],
-                                    selected: {provider.configuredWinners},
-                                    onSelectionChanged:
-                                        (Set<int> newSelection) {
-                                      provider.setConfiguredWinners(
-                                          newSelection.first);
-                                    },
-                                    style: ButtonStyle(
-                                      backgroundColor: MaterialStateProperty
-                                          .resolveWith<Color>(
-                                        (Set<MaterialState> states) {
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: SegmentedButton<int>(
+                                      segments: const [
+                                        ButtonSegment<int>(
+                                            value: 1, label: Text("1")),
+                                        ButtonSegment<int>(
+                                            value: 2, label: Text("2")),
+                                        ButtonSegment<int>(
+                                            value: 3, label: Text("3")),
+                                      ],
+                                      selected: {provider.configuredWinners},
+                                      onSelectionChanged:
+                                          (Set<int> newSelection) {
+                                        provider.setConfiguredWinners(
+                                            newSelection.first);
+                                      },
+                                      style: ButtonStyle(
+                                        backgroundColor: MaterialStateProperty
+                                            .resolveWith<Color>(
+                                          (Set<MaterialState> states) {
+                                            if (states.contains(
+                                                MaterialState.selected)) {
+                                              return AppTheme.accentGold;
+                                            }
+                                            return Colors.transparent;
+                                          },
+                                        ),
+                                        foregroundColor: MaterialStateProperty
+                                            .resolveWith<Color>(
+                                                (Set<MaterialState> states) {
                                           if (states.contains(
                                               MaterialState.selected)) {
-                                            return AppTheme.accentGold;
+                                            return Colors.black;
                                           }
-                                          return Colors.transparent;
-                                        },
+                                          return Colors.white;
+                                        }),
                                       ),
-                                      foregroundColor: MaterialStateProperty
-                                          .resolveWith<Color>(
-                                              (Set<MaterialState> states) {
-                                        if (states
-                                            .contains(MaterialState.selected)) {
-                                          return Colors.black;
-                                        }
-                                        return Colors.white;
-                                      }),
                                     ),
                                   ),
                                 ],
@@ -1340,7 +1351,8 @@ class _EventCreationScreenState extends State<EventCreationScreen> {
                                       Container(
                                         decoration: BoxDecoration(
                                           color: AppTheme.accentGold,
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
                                         child: IconButton(
                                           icon: const Icon(Icons.qr_code_2,

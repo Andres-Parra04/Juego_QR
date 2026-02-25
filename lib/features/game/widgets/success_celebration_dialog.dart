@@ -23,7 +23,8 @@ class SuccessCelebrationDialog extends StatefulWidget {
   final int totalClues;
 
   @override
-  State<SuccessCelebrationDialog> createState() => _SuccessCelebrationDialogState();
+  State<SuccessCelebrationDialog> createState() =>
+      _SuccessCelebrationDialogState();
 }
 
 class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
@@ -32,7 +33,8 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 2));
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 2));
     // Start confetti with a short delay for impact
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) _confettiController.play();
@@ -60,7 +62,7 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
           gravity: 0.2,
           emissionFrequency: 0.05,
         ),
-        
+
         TweenAnimationBuilder<double>(
           duration: const Duration(milliseconds: 600),
           tween: Tween(begin: 0.0, end: 1.0),
@@ -69,18 +71,21 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
             return Transform.scale(
               scale: value,
               child: Dialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24)),
                 backgroundColor: Colors.transparent,
                 child: Stack(
                   alignment: Alignment.topCenter,
                   clipBehavior: Clip.none,
                   children: [
                     Container(
-                      padding: const EdgeInsets.only(top: 60, left: 20, right: 20, bottom: 20),
+                      padding: const EdgeInsets.only(
+                          top: 60, left: 20, right: 20, bottom: 20),
                       decoration: BoxDecoration(
                         color: AppTheme.cardBg,
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: AppTheme.primaryPurple, width: 2),
+                        border:
+                            Border.all(color: AppTheme.primaryPurple, width: 2),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.5),
@@ -119,7 +124,8 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
                                 color: Colors.white.withOpacity(0.05),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                    color: AppTheme.accentGold.withOpacity(0.3)),
+                                    color:
+                                        AppTheme.accentGold.withOpacity(0.3)),
                               ),
                               child: Column(
                                 children: [
@@ -145,12 +151,15 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
                                 ],
                               ),
                             ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 12,
+                              runSpacing: 10,
                               children: [
-                                _buildRewardBadge(Icons.star,
-                                    "+${widget.clue.xpReward} XP", AppTheme.accentGold),
-                                const SizedBox(width: 15),
+                                _buildRewardBadge(
+                                    Icons.star,
+                                    "+${widget.clue.xpReward} XP",
+                                    AppTheme.accentGold),
                                 _buildRewardBadge(Icons.monetization_on,
                                     "+${widget.coinsEarned}", Colors.amber),
                               ],
@@ -184,7 +193,8 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
                                 label: const Text(
                                   'VOLVER AL MAPA',
                                   style: TextStyle(
-                                      fontSize: 16, fontWeight: FontWeight.bold),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold),
                                 ),
                               ),
                             ),
@@ -205,15 +215,19 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
-                                  colors: _getStampGradient(widget.clue.sequenceIndex),
+                                  colors: _getStampGradient(
+                                      widget.clue.sequenceIndex),
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
                                 shape: BoxShape.circle,
-                                border: Border.all(color: AppTheme.cardBg, width: 4),
+                                border: Border.all(
+                                    color: AppTheme.cardBg, width: 4),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: _getStampGradient(widget.clue.sequenceIndex)[0].withOpacity(0.5),
+                                    color: _getStampGradient(
+                                            widget.clue.sequenceIndex)[0]
+                                        .withOpacity(0.5),
                                     blurRadius: 15,
                                     offset: const Offset(0, 5),
                                   ),
@@ -259,7 +273,9 @@ class _SuccessCelebrationDialogState extends State<SuccessCelebrationDialog> {
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 6),
-          Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
+          Text(text,
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.bold, fontSize: 13)),
         ],
       ),
     );

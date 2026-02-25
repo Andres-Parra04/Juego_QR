@@ -330,7 +330,9 @@ class GameProvider extends ChangeNotifier implements IResettable {
       _setRaceCompleted(completed, source);
     }, onProgressUpdate: () {
       debugPrint(
-          '🏎️ RACE UPDATE: Realtime progress detected, refreshing leaderboard...');
+          '🏎️ RACE UPDATE: Realtime progress detected. Performing authoritative check...');
+      // ⚡ CRITICAL: Use authoritative fetch on any progress update
+      checkRaceStatus();
       _fetchLeaderboardInternal(silent: true);
     });
   }
@@ -484,7 +486,11 @@ class GameProvider extends ChangeNotifier implements IResettable {
 
       // FIX: Removed legacy client-side race completion logic.
       // The server (via 'events' table status) is the only source of truth for race completion.
-      // This checking was causing premature "Race Completed" state even if more winners were needed.
+
+      // ⚡ CRITICAL: ALWAYS check race status during leaderboard sync.
+      // The 5s timer uses silent=true, so we CANNOT gate this.
+      // On Android, Realtime drops silently — this poll is the backup.
+      checkRaceStatus();
 
       notifyListeners();
     } catch (e) {
@@ -504,12 +510,17 @@ class GameProvider extends ChangeNotifier implements IResettable {
       } else {
         _lives = 0;
       }
-      _isRaceCompleted = false;
       _clues = [];
       _leaderboard = [];
       _currentClueIndex = 0;
       _currentSponsor = null; // Reset sponsor
     }
+
+    // ⚡ CRITICAL: Always reset race status when entering/re-entering a competition.
+    // This handles reset competitions where the eventId stays the same but DB status
+    // went from 'completed' → 'pending'. The authoritative checkRaceStatus() in the
+    // finally block will set this correctly from the server.
+    _isRaceCompleted = false;
 
     final idToUse = eventId ?? _currentEventId;
 
@@ -549,6 +560,7 @@ class GameProvider extends ChangeNotifier implements IResettable {
     } finally {
       // ⚡ CRÍTICO: Suscribirse o actualizar suscripción una vez que totalClues es real
       subscribeToRaceStatus();
+      checkRaceStatus(); // NEW: Autoritative fetch on initial load/join
 
       // Fetch Sponsor if not loaded (and eventId is valid)
       if (idToUse != null && _currentSponsor == null) {
@@ -717,10 +729,10 @@ class GameProvider extends ChangeNotifier implements IResettable {
     try {
       final isCompleted = await _gameService.checkRaceStatus(_currentEventId!);
 
-      if (isCompleted && totalClues > 0) {
+      if (isCompleted) {
         _setRaceCompleted(true, 'Server Health Check');
       } else {
-        _setRaceCompleted(false, 'Server Health Check (Falsed or 0 clues)');
+        _setRaceCompleted(false, 'Server Health Check (False)');
       }
     } catch (e) {
       debugPrint('Error checking race status: $e');

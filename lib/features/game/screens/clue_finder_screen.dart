@@ -53,6 +53,23 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
 
     _startLocationUpdates();
     _showClueScannerTutorial();
+
+    // ⚡ CRITICAL: Listen for global race completion while in the map
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<GameProvider>(context, listen: false)
+            .addListener(_checkRaceStatus);
+      }
+    });
+  }
+
+  void _checkRaceStatus() {
+    if (!mounted) return;
+    final gp = Provider.of<GameProvider>(context, listen: false);
+    if (gp.isRaceCompleted) {
+      debugPrint("🏁 Race finished while in ClueFinder. Returning...");
+      Navigator.of(context).maybePop();
+    }
   }
 
   void _showClueScannerTutorial() async {
@@ -178,6 +195,12 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
 
   @override
   void dispose() {
+    // ⚡ CRITICAL: Clean up listener
+    try {
+      Provider.of<GameProvider>(context, listen: false)
+          .removeListener(_checkRaceStatus);
+    } catch (_) {}
+
     _positionStreamSubscription?.cancel();
     _pulseController.dispose();
     _shakeController.dispose();
@@ -414,9 +437,9 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
         _temperatureStatus == "FRÍO" ||
         _temperatureStatus == "¡AQUÍ ESTÁ!";
     final bool useDarkStyle = shouldForceDark;
-    
+
     // La imagen de fondo ahora es visible SIEMPRE (opacidad 1.0 constante o alta)
-    const double bgImageOpacity = 0.85; 
+    const double bgImageOpacity = 0.85;
     // Overlay m�s suave para que la foto sea la protagonista
     final double overlayOpacity = isDarkMode ? 0.4 : 0.1;
 
@@ -535,15 +558,14 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
                     ),
                   ),
 
-
-
-
                   SafeArea(
                     child: SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minHeight: MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top - MediaQuery.of(context).padding.bottom,
+                          minHeight: MediaQuery.of(context).size.height -
+                              MediaQuery.of(context).padding.top -
+                              MediaQuery.of(context).padding.bottom,
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -564,28 +586,46 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(18),
                                   child: BackdropFilter(
-                                    filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                                    filter: ImageFilter.blur(
+                                        sigmaX: 15, sigmaY: 15),
                                     child: Container(
                                       padding: const EdgeInsets.all(20),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFF150826).withOpacity(0.4),
+                                        color: const Color(0xFF150826)
+                                            .withOpacity(0.4),
                                         borderRadius: BorderRadius.circular(18),
-                                        border: Border.all(color: AppTheme.accentGold.withOpacity(0.6), width: 2),
+                                        border: Border.all(
+                                            color: AppTheme.accentGold
+                                                .withOpacity(0.6),
+                                            width: 2),
                                       ),
                                       child: Column(
                                         children: [
                                           const Row(
                                             children: [
-                                              Icon(Icons.search, color: AppTheme.accentGold, size: 20),
+                                              Icon(Icons.search,
+                                                  color: AppTheme.accentGold,
+                                                  size: 20),
                                               SizedBox(width: 8),
-                                              Text("OBJETIVO", style: TextStyle(color: AppTheme.accentGold, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                              Text("OBJETIVO",
+                                                  style: TextStyle(
+                                                      color:
+                                                          AppTheme.accentGold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      letterSpacing: 1.2)),
                                             ],
                                           ),
                                           const SizedBox(height: 10),
                                           Text(
-                                            widget.clue.hint.isNotEmpty ? widget.clue.hint : "Encuentra la ubicación...",
+                                            widget.clue.hint.isNotEmpty
+                                                ? widget.clue.hint
+                                                : "Encuentra la ubicación...",
                                             textAlign: TextAlign.center,
-                                            style: const TextStyle(fontSize: 16, color: Colors.white, height: 1.4),
+                                            style: const TextStyle(
+                                                fontSize: 16,
+                                                color: Colors.white,
+                                                height: 1.4),
                                           ),
                                         ],
                                       ),
@@ -597,7 +637,8 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
 
                             // QR Scan prompt
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
                               child: Column(
                                 children: [
                                   const Text(
@@ -607,7 +648,9 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
                                       fontWeight: FontWeight.bold,
                                       color: AppTheme.successGreen,
                                       shadows: [
-                                        Shadow(color: AppTheme.successGreen, blurRadius: 15),
+                                        Shadow(
+                                            color: AppTheme.successGreen,
+                                            blurRadius: 15),
                                       ],
                                     ),
                                   ),
@@ -617,36 +660,53 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
                                     width: double.infinity,
                                     padding: const EdgeInsets.all(4),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.successGreen.withOpacity(0.05),
+                                      color: AppTheme.successGreen
+                                          .withOpacity(0.05),
                                       borderRadius: BorderRadius.circular(22),
                                       border: Border.all(
-                                        color: AppTheme.successGreen.withOpacity(0.2),
+                                        color: AppTheme.successGreen
+                                            .withOpacity(0.2),
                                         width: 1,
                                       ),
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(18),
                                       child: BackdropFilter(
-                                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                                        filter: ImageFilter.blur(
+                                            sigmaX: 15, sigmaY: 15),
                                         child: Container(
-                                          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 24, horizontal: 20),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFF150826).withOpacity(0.4),
-                                            borderRadius: BorderRadius.circular(18),
-                                            border: Border.all(color: AppTheme.successGreen.withOpacity(0.6), width: 2),
+                                            color: const Color(0xFF150826)
+                                                .withOpacity(0.4),
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                            border: Border.all(
+                                                color: AppTheme.successGreen
+                                                    .withOpacity(0.6),
+                                                width: 2),
                                           ),
                                           child: Column(
                                             children: [
                                               AnimatedBuilder(
                                                 animation: _pulseController,
-                                                builder: (context, child) => Transform.scale(
-                                                  scale: 1.0 + (_pulseController.value * 0.1),
+                                                builder: (context, child) =>
+                                                    Transform.scale(
+                                                  scale: 1.0 +
+                                                      (_pulseController.value *
+                                                          0.1),
                                                   child: Icon(
                                                     Icons.qr_code_scanner,
-                                                    color: AppTheme.successGreen,
+                                                    color:
+                                                        AppTheme.successGreen,
                                                     size: 60,
                                                     shadows: [
-                                                      Shadow(color: AppTheme.successGreen.withOpacity(0.8), blurRadius: 30),
+                                                      Shadow(
+                                                          color: AppTheme
+                                                              .successGreen
+                                                              .withOpacity(0.8),
+                                                          blurRadius: 30),
                                                     ],
                                                   ),
                                                 ),
@@ -654,7 +714,11 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
                                               const SizedBox(height: 10),
                                               const Text(
                                                 "Escanea el QR de la pista",
-                                                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                                style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 14,
+                                                    fontWeight:
+                                                        FontWeight.bold),
                                               ),
                                             ],
                                           ),
@@ -668,7 +732,8 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
 
                             // Buttons
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 16, 20, 10),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -678,16 +743,27 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: AppTheme.successGreen,
                                         foregroundColor: Colors.black,
-                                        padding: const EdgeInsets.symmetric(vertical: 18),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 18),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
                                         elevation: 10,
                                       ),
                                       onPressed: () async {
-                                        final scanned = await Navigator.push(context, MaterialPageRoute(builder: (_) => const QRScannerScreen()));
-                                        if (scanned != null) _handleScannedCode(scanned);
+                                        final scanned = await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const QRScannerScreen()));
+                                        if (scanned != null)
+                                          _handleScannedCode(scanned);
                                       },
                                       icon: const Icon(Icons.qr_code, size: 20),
-                                      label: const Text("ESCANEAR AHORA", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                      label: const Text("ESCANEAR AHORA",
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16)),
                                     ),
                                   ),
                                   const SizedBox(height: 10),
@@ -697,14 +773,25 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: AppTheme.accentGold,
                                         foregroundColor: Colors.black,
-                                        padding: const EdgeInsets.symmetric(vertical: 18),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 18),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
                                       ),
                                       onPressed: () async {
-                                        final scanned = await Navigator.push(context, MaterialPageRoute(builder: (_) => const QRScannerScreen()));
-                                        if (scanned != null) _handleScannedCode(scanned);
+                                        final scanned = await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const QRScannerScreen()));
+                                        if (scanned != null)
+                                          _handleScannedCode(scanned);
                                       },
-                                      child: const Text("VERIFICAR CÓDIGO", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                      child: const Text("VERIFICAR CÓDIGO",
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15)),
                                     ),
                                   ),
                                 ],
@@ -713,10 +800,9 @@ class _ClueFinderScreenState extends State<ClueFinderScreen>
 
                             // DEV BYPASS: Only visible for admin role
                             DevelopmentBypassButton(
-                              onBypass: () => _handleScannedCode("DEV_SKIP_CODE"),
+                              onBypass: () =>
+                                  _handleScannedCode("DEV_SKIP_CODE"),
                             ),
-
-                          
                           ],
                         ),
                       ),
