@@ -218,7 +218,7 @@ class EventCreationProvider extends ChangeNotifier {
   }
 
   void setNumberOfClues(int value) {
-    if (value > 12) value = 12;
+    if (value > 30) value = 30;
     if (value < 0) value = 0;
     _numberOfClues = value;
     notifyListeners();

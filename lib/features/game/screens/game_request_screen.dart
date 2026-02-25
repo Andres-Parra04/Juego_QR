@@ -45,7 +45,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
   GameRequest? _gameRequest;
 
   bool _isLoading = true;
-  bool _isSubmitting = false; // Estado para el botón de envío
+  bool _isSubmitting = false; // Estado para el botÃ³n de envÃ­o
   int _participantCount = 0; // NEW: Participant count
   int _maxParticipants = 30; // UPDATED: Dynamic limit
 
@@ -85,7 +85,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Precargar ambas imágenes de fondo para transiciones suaves
+    // Precargar ambas imÃ¡genes de fondo para transiciones suaves
     precacheImage(const AssetImage('assets/images/hero.png'), context);
     precacheImage(const AssetImage('assets/images/loginclaro.png'), context);
   }
@@ -110,7 +110,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
       },
     );
 
-    // 2. Escuchar INSERCIONES en game_players (Aprobación definitiva)
+    // 2. Escuchar INSERCIONES en game_players (AprobaciÃ³n definitiva)
     _playerChannelId = _gameRepository!.subscribeToGamePlayerInserts(
       userId: userId,
       eventId: eventId,
@@ -132,25 +132,25 @@ class _GameRequestScreenState extends State<GameRequestScreen>
       try {
         final request =
             await requestProvider.getRequestForPlayer(userId, eventId);
-        // 2. VERIFICACIÓN CRÍTICA: ¿Ya es participante? (User game_players table)
+        // 2. VERIFICACIÃ“N CRÃTICA: Â¿Ya es participante? (User game_players table)
         final participantData =
             await requestProvider.isPlayerParticipant(userId, eventId);
         final isParticipant = participantData['isParticipant'] as bool;
         final playerStatus = participantData['status'] as String?;
 
         if (mounted) {
-          // Verificar si está suspendido/baneado
+          // Verificar si estÃ¡ suspendido/baneado
           if (isParticipant &&
               (playerStatus == 'suspended' || playerStatus == 'banned')) {
             debugPrint(
-                '🚫 GameRequestScreen: User is BANNED, redirecting to ScenariosScreen');
+                'ðŸš« GameRequestScreen: User is BANNED, redirecting to ScenariosScreen');
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (_) => ScenariosScreen()),
             );
             return;
           }
 
-          // Si ya es participante ACTIVO o está aprobado -> REDIRECCIÓN INMEDIATA
+          // Si ya es participante ACTIVO o estÃ¡ aprobado -> REDIRECCIÃ“N INMEDIATA
           if ((request != null && request.isApproved) ||
               (isParticipant && playerStatus == 'active')) {
             // CRITICAL FIX: Reset spectator role
@@ -162,7 +162,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
             return;
           }
 
-          // 🔥 FETCH PARTICIPANT COUNT
+          // ðŸ”¥ FETCH PARTICIPANT COUNT
           final count = await requestProvider.getParticipantCount(eventId);
 
           // FETCH MAX PARTICIPANTS
@@ -237,7 +237,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
 
     if (event == null) return;
 
-    // PRIORIDAD AL ESTADO: Si el evento ya está activo o completado, omitir cuenta regresiva
+    // PRIORIDAD AL ESTADO: Si el evento ya estÃ¡ activo o completado, omitir cuenta regresiva
     if (event.status == 'active' || event.status == 'completed') {
       if (mounted) {
         setState(() {
@@ -269,9 +269,9 @@ class _GameRequestScreenState extends State<GameRequestScreen>
         }
         
         // RE-VERIFICAR ESTADO EN CADA TICK (Por si cambia a active manualmente)
-        // Nota: Esto requiere que 'event' se actualice, lo cual no sucede aquí automáticamente.
-        // GameRequestScreen debería escuchar cambios del evento si queremos realtime real.
-        // Por ahora, mantenemos la lógica de fecha, pero ya tenemos la validación inicial.
+        // Nota: Esto requiere que 'event' se actualice, lo cual no sucede aquÃ­ automÃ¡ticamente.
+        // GameRequestScreen deberÃ­a escuchar cambios del evento si queremos realtime real.
+        // Por ahora, mantenemos la lÃ³gica de fecha, pero ya tenemos la validaciÃ³n inicial.
         
         final now = DateTime.now();
         if (event!.date.isAfter(now)) {
@@ -309,14 +309,14 @@ class _GameRequestScreenState extends State<GameRequestScreen>
       final request =
           await requestProvider.getRequestForPlayer(userId, eventId);
 
-      // 2. VERIFICACIÓN CRÍTICA: ¿Ya es participante? (User game_players table)
+      // 2. VERIFICACIÃ“N CRÃTICA: Â¿Ya es participante? (User game_players table)
       // Esto cubre el caso donde la solicitud se borra al aprobarse o el realtime falla
       final participantData =
           await requestProvider.isPlayerParticipant(userId, eventId);
       final isParticipant = participantData['isParticipant'] as bool;
       final playerStatus = participantData['status'] as String?;
 
-      debugPrint('🔍 GameRequestScreen: Checking approval status');
+      debugPrint('ðŸ” GameRequestScreen: Checking approval status');
       debugPrint('   - isParticipant: $isParticipant');
       debugPrint('   - playerStatus: $playerStatus');
       debugPrint('   - request: ${request?.toJson()}');
@@ -327,14 +327,14 @@ class _GameRequestScreenState extends State<GameRequestScreen>
         });
       }
 
-      // 3. VERIFICAR SI ESTÁ SUSPENDIDO/BANEADO
+      // 3. VERIFICAR SI ESTÃ SUSPENDIDO/BANEADO
       if (isParticipant &&
           (playerStatus == 'suspended' || playerStatus == 'banned')) {
         if (!mounted) return;
 
         _pollingTimer?.cancel(); // Detener polling
 
-        debugPrint('🚫 GameRequestScreen: User is BANNED from this event!');
+        debugPrint('ðŸš« GameRequestScreen: User is BANNED from this event!');
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -352,14 +352,14 @@ class _GameRequestScreenState extends State<GameRequestScreen>
         return;
       }
 
-      // 4. Si está aprobado O ya es participante ACTIVO, entrar al juego
+      // 4. Si estÃ¡ aprobado O ya es participante ACTIVO, entrar al juego
       if ((request != null && request.isApproved) ||
           (isParticipant && playerStatus == 'active')) {
         if (!mounted) return;
 
         _pollingTimer?.cancel(); // Detener polling
 
-        debugPrint('✅ GameRequestScreen: User approved!');
+        debugPrint('âœ… GameRequestScreen: User approved!');
 
         // CRITICAL FIX: Ensure user is NOT marked as spectator if approved as player
         playerProvider.setSpectatorRole(false);
@@ -412,7 +412,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
       try {
         debugPrint('[UI] Attempting to submit request...');
 
-        // Obtenemos el límite real del evento
+        // Obtenemos el lÃ­mite real del evento
         final eventProvider =
             Provider.of<EventProvider>(context, listen: false);
         int maxPlayers = 30; // Default fallback
@@ -422,13 +422,13 @@ class _GameRequestScreenState extends State<GameRequestScreen>
           maxPlayers = event.maxParticipants;
         } catch (_) {}
 
-        // ✅ CAPTURAR el resultado del submitRequest
+        // âœ… CAPTURAR el resultado del submitRequest
         final result = await requestProvider.submitRequest(
             playerProvider.currentPlayer!, widget.eventId!, maxPlayers);
 
         if (!mounted) return;
 
-        // ✅ MANEJAR cada caso específicamente
+        // âœ… MANEJAR cada caso especÃ­ficamente
         switch (result) {
           case SubmitRequestResult.submitted:
             // Refresh data para mostrar la nueva solicitud
@@ -449,7 +449,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        '¡Solicitud enviada! Espera la aprobación del administrador.',
+                        'Â¡Solicitud enviada! Espera la aprobaciÃ³n del administrador.',
                         style: TextStyle(fontSize: 15),
                       ),
                     ),
@@ -507,7 +507,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        '¡Ya eres participante de este evento! Puedes empezar a jugar.',
+                        'Â¡Ya eres participante de este evento! Puedes empezar a jugar.',
                         style: TextStyle(fontSize: 15),
                       ),
                     ),
@@ -540,7 +540,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        '¡Evento lleno! El límite es de $maxPlayers participantes. Puedes entrar como espectador.',
+                        'Â¡Evento lleno! El lÃ­mite es de $maxPlayers participantes. Puedes entrar como espectador.',
                         style: const TextStyle(fontSize: 15),
                       ),
                     ),
@@ -641,7 +641,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
   void _showRequestStatusDialog(GameRequest request) {
     final isDarkMode = true /* always dark UI */;
     final Color currentOrange =
-        const Color(0xFFFF9800); // Naranja de conexión perdida
+        const Color(0xFFFF9800); // Naranja de conexiÃ³n perdida
     final Color cardBg = const Color(0xFF151517); // Fondo muy oscuro
 
     showDialog(
@@ -690,7 +690,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                 ),
                 const SizedBox(height: 24),
 
-                // Título
+                // TÃ­tulo
                 const Text(
                   'Estado de la solicitud',
                   style: TextStyle(
@@ -702,7 +702,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                 ),
                 const SizedBox(height: 20),
 
-                // Píldora de Estado (Pendiente/Naranja)
+                // PÃ­ldora de Estado (Pendiente/Naranja)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
@@ -727,7 +727,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
 
                 const SizedBox(height: 32),
 
-                // Botón de Acción Principal
+                // BotÃ³n de AcciÃ³n Principal
                 if (request.isApproved)
                   SizedBox(
                     width: double.infinity,
@@ -912,49 +912,51 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                 position: _slideAnimation,
                 child: _isLoading
                     ? const Center(child: LoadingIndicator())
-                    : Column(
-                        children: [
-                          // Main Content Area
-                          Expanded(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 24.0),
-                              child: _gameRequest != null &&
-                                      _gameRequest!.isApproved
-                                  ? Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const Center(
-                                          child: LoadingIndicator(
+                    : SingleChildScrollView(
+                        child: Center(
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: kIsWeb ? 600 : double.infinity),
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                            child: Column(
+                              children: [
+                                const SizedBox(height: 20),
+                                _gameRequest != null &&
+                                        _gameRequest!.isApproved
+                                    ? Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          const Center(
+                                            child: LoadingIndicator(
+                                                fontSize: 16,
+                                                color: Colors.greenAccent),
+                                          ),
+                                          const SizedBox(height: 24),
+                                          const Text(
+                                            "SOLICITUD APROBADA!",
+                                            style: TextStyle(
+                                              fontFamily: 'Orbitron',
+                                              color: Colors.greenAccent,
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 1.5,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          const Text(
+                                            "Entrando al evento...",
+                                            style: TextStyle(
+                                              color: Colors.white70,
                                               fontSize: 16,
-                                              color: Colors.greenAccent),
-                                        ),
-                                        const SizedBox(height: 24),
-                                        const Text(
-                                          "¡SOLICITUD APROBADA!",
-                                          style: TextStyle(
-                                            fontFamily: 'Orbitron',
-                                            color: Colors.greenAccent,
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 1.5,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        const Text(
-                                          "Entrando al evento...",
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceEvenly,
-                                      children: [
+                                        ],
+                                      )
+                                    : Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                        const SizedBox(height: 12),
                                         Container(
                                           width: 85,
                                           height: 85,
@@ -1002,9 +1004,10 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                           ),
                                         ),
 
+                                        const SizedBox(height: 12),
                                         // Welcome Message
                                         Text(
-                                          '¡Bienvenido ${player?.name ?? "Jugador"}!',
+                                          'Bienvenido ${player?.name ?? "Jugador"}!',
                                           style: Theme.of(context)
                                               .textTheme
                                               .displaySmall
@@ -1017,6 +1020,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                           textAlign: TextAlign.center,
                                         ),
 
+                                        const SizedBox(height: 16),
                                         // --- COUNTDOWN WIDGET ---
                                         if (_timeUntilStart != null)
                                           Container(
@@ -1129,7 +1133,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                                           size: 30),
                                                       const SizedBox(height: 8),
                                                       const Text(
-                                                          "¡COMPETENCIA EN CURSO!",
+                                                          "COMPETENCIA EN CURSO!",
                                                           style: TextStyle(
                                                               color: Color(
                                                                   0xFF00F0FF),
@@ -1142,7 +1146,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                                                   0.5,
                                                               fontSize: 15)),
                                                       const Text(
-                                                          "¡Corre a buscar las pistas!",
+                                                          "Corre a buscar las pistas!",
                                                           style: TextStyle(
                                                               color:
                                                                   Colors.white,
@@ -1157,6 +1161,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                             ),
                                           ),
 
+                                        const SizedBox(height: 16),
                                         // Info Card
                                         Container(
                                           padding: const EdgeInsets.all(4),
@@ -1204,7 +1209,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                                     if (_participantCount >=
                                                         _maxParticipants) ...[
                                                       const Text(
-                                                          '¡EVENTO LLENO!',
+                                                          'EVENTO LLENO!',
                                                           style: TextStyle(
                                                               color: Colors
                                                                   .redAccent,
@@ -1222,7 +1227,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                                               fontSize: 14)),
                                                     ] else ...[
                                                       const Text(
-                                                        '¿Te gustaría participar?',
+                                                        'Te gustaria participar?',
                                                         style: TextStyle(
                                                             fontWeight:
                                                                 FontWeight.bold,
@@ -1233,7 +1238,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                                       ),
                                                       const SizedBox(height: 8),
                                                       Text(
-                                                        'Envía tu solicitud para que el administrador la revise.',
+                                                        'Envia tu solicitud para que el administrador la revise.',
                                                         style: TextStyle(
                                                             color:
                                                                 Colors.white70,
@@ -1262,6 +1267,7 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                             ),
                                           ),
                                         ),
+                                        const SizedBox(height: 16),
                                         // Request Status
                                         if (_gameRequest != null &&
                                             !_gameRequest!.isApproved)
@@ -1329,13 +1335,12 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                                 ),
                                               ),
                                             ),
-                                          )
+                                          ),
+                                        const SizedBox(height: 16),
                                       ],
                                     ),
-                            ),
-                          ),
-
-                          // Bottom Action Section
+                                const SizedBox(height: 32),
+                                // Bottom Action Section
                           if (_gameRequest == null ||
                               (!_gameRequest!.isApproved))
                             Container(
@@ -1470,20 +1475,23 @@ class _GameRequestScreenState extends State<GameRequestScreen>
                                         icon: const Icon(Icons.bug_report,
                                             size: 18),
                                         label: const Text(
-                                            "DEBUG: Simular Aprobación",
+                                            "DEBUG: Simular Aprobacion",
                                             style: TextStyle(fontSize: 12)),
                                       ),
                                     ),
                                 ],
                               ),
                             ),
-                        ],
+                          ],
+                        ),
                       ),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      );
+    }
 }
